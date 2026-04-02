@@ -5,3 +5,5 @@ mlflow
 streamlit
 pyarrow
 optuna
+seaborn 
+matplotlib
