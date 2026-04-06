@@ -10,53 +10,58 @@ This repository is the first step in building DemandCast — an individual machi
 
 ## Repository Structure
 
-- data/ : raw and processed datasets (store only metadata or pointers to large raw files).
-- notebooks/ : exploratory notebooks and experiments.
-- project-1-implementation-guide.md : instructor-supplied assignment guide.
-- README.md : this document.
+```
+aml-demandcast/
+├── data/
+│   ├── yellow_tripdata_2025-01.parquet       # NYC yellow taxi trips, Jan 2025
+│   └── data_dictionary_trip_records_yellow.pdf
+├── notebooks/
+│   ├── 01_initial_exploration.ipynb          # Initial data inspection and EDA
+│   └── 02_eda_skeleton.ipynb                 # Extended EDA with demand patterns
+├── src/
+│   ├── features_skeleton.py                  # Feature engineering skeleton
+│   ├── train.py                              # Model training script
+│   ├── tune.py                               # Hyperparameter tuning (Optuna)
+│   └── cv.py                                 # Cross-validation utilities
+├── project-1-implementation-guide.md         # Instructor-supplied assignment guide
+├── requirements.txt
+└── README.md
+```
 
-Add scripts and dependency files as you develop (e.g., `requirements.txt`, `environment.yml`, or `setup.py`).
+## Dataset
 
-## Dataset Overview
+**Source:** NYC TLC Yellow Taxi Trip Records — January 2025 (`yellow_tripdata_2025-01.parquet`)
 
-We will use the NYC taxi dataset (yellow/green taxi trips). Key fields to expect:
+Key fields:
 
-- `pickup_datetime`, `dropoff_datetime` — timestamps.
-- `pickup_zone`, `dropoff_zone` — geospatial pickup/dropoff zones (Borough/Zone or taxi zone ID).
-- `passenger_count`, `trip_distance`, `fare_amount`, `payment_type` — trip attributes.
+- `tpep_pickup_datetime`, `tpep_dropoff_datetime` — trip timestamps
+- `PULocationID`, `DOLocationID` — taxi zone IDs (1–263)
+- `passenger_count`, `trip_distance`, `fare_amount`, `payment_type` — trip attributes
 
-Primary target: hourly count of pickups per pickup zone. Important considerations:
+See `data/data_dictionary_trip_records_yellow.pdf` for the full field reference.
 
-- Timezone and daylight savings handling.
-- Aggregation to consistent hourly bins.
-- Missing or malformed timestamps and zones.
+**Primary target:** hourly pickup count per zone. Key considerations:
+- Timezone normalization (data is UTC; NYC is ET)
+- Aggregation to consistent hourly bins
+- Zones with zero trips in a given hour (sparse demand)
 
 ## Setup and Reproducibility
 
-Recommended Python environment (example):
-
 ```powershell
-# Create virtual environment (Windows PowerShell)
+# Windows PowerShell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-If you prefer conda:
-
 ```bash
+# bash / conda
 conda create -n demandcast python=3.10
 conda activate demandcast
 pip install -r requirements.txt
 ```
 
-If `requirements.txt` is not present yet, create one with the packages you use (pandas, numpy, matplotlib/seaborn, scikit-learn, geopandas/pyproj if zone geometry is used).
-
-Reproducibility tips:
-
-- Pin package versions in `requirements.txt`.
-- Record the dataset source and any preprocessing steps in `data/README.md`.
-- Set random seeds when training models.
+**Key dependencies:** pandas, numpy, scikit-learn, mlflow, optuna, streamlit, pyarrow, seaborn, matplotlib
 
 ## Exploratory Data Analysis (EDA) Checklist
 
@@ -77,16 +82,19 @@ Initial EDA items to complete in `notebooks/`:
 4. Implement feature engineering scripts and a simple baseline model.
 5. Iterate on model improvements and evaluation.
 
-## Next Steps / Deliverables for This Assignment
+## Status
 
-- Populate `data/` with a small sample or pointers to the full dataset.
-- Create an initial EDA notebook in `notebooks/` summarizing: data coverage, hourly demand plots, top zones, and a short list of candidate features.
-- Commit `requirements.txt` and document how to reproduce the environment.
+| Task | Status |
+|---|---|
+| Environment setup | Done |
+| Raw data acquired | Done |
+| Initial exploration (`01_initial_exploration.ipynb`) | Done |
+| Extended EDA (`02_eda_skeleton.ipynb`) | In progress |
+| Feature engineering (`src/features_skeleton.py`) | In progress |
+| Baseline model (`src/train.py`) | In progress |
+| Hyperparameter tuning (`src/tune.py`) | In progress |
 
-## Contact / Author
+## Author
 
-Repository maintained by the project owner. For questions about setup or content, add an issue or contact the instructor.
-
----
-Update this README as the project evolves. The EDA findings will directly inform feature engineering and model design decisions in subsequent weeks.
+Ted Roper — Applied Machine Learning, Spring 2026
 
