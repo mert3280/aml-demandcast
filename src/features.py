@@ -2,8 +2,7 @@
 features.py — Feature engineering for DemandCast
 =================================================
 This module contains feature engineering logic for the NYC taxi demand
-forecasting pipeline. It is imported by pipelines/build_features.py and
-src/train.py.
+forecasting pipeline. It is imported by build_features.py and src/train.py.
 
 Functions
 ---------
@@ -14,7 +13,7 @@ add_lag_features        Add lagged demand columns (1h, 24h, 168h) per zone
 
 Constants
 ---------
-FEATURE_COLS            Intentionally left empty for students to populate.
+FEATURE_COLS            Final feature columns used for model training.
                         Keep this list in sync with train.py and dashboard.py
                         when you finalize feature choices.
 """
@@ -25,36 +24,42 @@ from typing import Optional
 
 
 # ---------------------------------------------------------------------------
-# Feature column contract (student exercise)
+# Feature column contract
 # ---------------------------------------------------------------------------
 # IMPORTANT: Keep this list in sync with train.py and app/dashboard.py.
 # Changing a name here without updating those files will break prediction.
 
 FEATURE_COLS: list[str] = [
-    # Students: fill in feature column names you decide are important.
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "is_rush_hour",
+    "PULocationID",
+    "demand_lag_1h",
+    "demand_lag_24h",
+    "demand_lag_168h",
 ]
 
 
 # ---------------------------------------------------------------------------
 # 1. clean_data
 # ---------------------------------------------------------------------------
+# AI Prompt used: "Write a pandas function that filters a NYC taxi trip
+# DataFrame by removing rows where trip_distance is 0 or greater than 20,
+# fare_amount is 0, negative, or above 70, or passenger_count is outside the
+# range 1-7. Chain the conditions into a single boolean mask, use .loc[] to
+# filter, and reset the index before returning."
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """Clean raw trip-level rows before feature engineering.
 
-    Use thresholds determined during EDA. The defaults below are reasonable
-    starting points — override them if your EDA revealed different
-    breakpoints for your data sample.
-
-    Cleaning strategy (student exercise)
-    -----------------------------------
-    Implement the data cleaning strategies you determined during exploratory
-    data analysis (EDA). Do not hard-code specific thresholds in this
-    template; instead document and apply the rules you identified (for
-    example: outlier detection, sensible missing-value handling, sensor-error
-    filters, or domain-specific rules). Justify your choices in the
-    accompanying notebook and use the methods you found appropriate for the
-    dataset.
+    Thresholds determined during EDA (Section 4, 02_eda_skeleton.ipynb):
+      - trip_distance: (0, 20] — removes sensor zeros and implausible long trips
+        (values above 20 are above the 99th percentile and likely data errors)
+      - fare_amount: (0, 70] — removes refunded/erroneous fares and extreme outliers
+        (values above 70 are above the 99th percentile)
+      - passenger_count: [1, 7] — removes empty-cab records and overloaded trips
 
     Parameters
     ----------
@@ -71,10 +76,12 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     >>> clean_df = clean_data(df)
     >>> print(f"Rows removed: {len(df) - len(clean_df)}")
     """
-    # TODO: Apply the three filters described in the docstring.
-    # Example pattern: mask = (condition_1) & (condition_2) & (condition_3)
-    # return df.loc[mask].reset_index(drop=True)
-    pass
+    mask = (
+        (df["trip_distance"] > 0) & (df["trip_distance"] <= 20) &
+        (df["fare_amount"] > 0) & (df["fare_amount"] <= 70) &
+        (df["passenger_count"] >= 1) & (df["passenger_count"] <= 7)
+    )
+    return df.loc[mask].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +127,16 @@ def create_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     >>> df = create_temporal_features(df)
     >>> df[['hour', 'day_of_week', 'is_weekend', 'is_rush_hour']].head()
     """
-    # TODO: Add the five new columns described in the docstring.
-    pass
+    dt = df["tpep_pickup_datetime"]
+    df["pickup_hour"] = dt.dt.floor("h")
+    df["hour"] = dt.dt.hour
+    df["day_of_week"] = dt.dt.dayofweek
+    df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
+    df["month"] = dt.dt.month
+    df["is_rush_hour"] = (
+        (df["hour"].isin([7, 8, 17, 18])) & (df["day_of_week"] < 5)
+    ).astype(int)
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -135,14 +150,14 @@ def aggregate_to_hourly_demand(df: pd.DataFrame) -> pd.DataFrame:
     trip-level data (one row per trip) into the modeling target (one row per
     zone per hour, where the value is the number of pickups).
 
-    Input shape  : (n_trips, many columns)  — e.g. 2.5M rows for January 2024
+    Input shape  : (n_trips, many columns)  — e.g. 3.5M rows for January 2025
     Output shape : (n_zones × n_hours, 3)   — e.g. ~260 zones × 744 hours
 
     Output columns
     --------------
     PULocationID : int
         Pickup zone ID (1–265 in NYC TLC data).
-    hour : datetime64
+    pickup_datetime : datetime64
         The hour bucket (pickup_hour floored to the nearest hour).
     demand : int
         Number of taxi pickups in this zone during this hour.
@@ -156,7 +171,7 @@ def aggregate_to_hourly_demand(df: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        Aggregated demand DataFrame with columns [PULocationID, hour, demand].
+        Aggregated demand DataFrame with columns [PULocationID, pickup_datetime, demand].
 
     Examples
     --------
@@ -164,9 +179,12 @@ def aggregate_to_hourly_demand(df: pd.DataFrame) -> pd.DataFrame:
     >>> print(hourly.shape)   # expect (n_zones * n_hours, 3)
     >>> hourly.head()
     """
-    # TODO: Group by PULocationID and pickup_hour, count rows, and rename
-    # the count column to 'demand'. Reset the index afterward.
-    pass
+    return (
+        df.groupby(["PULocationID", "pickup_hour"])
+        .size()
+        .reset_index(name="demand")
+        .rename(columns={"pickup_hour": "pickup_datetime"})
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -221,10 +239,12 @@ def add_lag_features(
 
     Examples
     --------
-    >>> hourly = hourly.sort_values(['PULocationID', 'hour'])
+    >>> hourly = hourly.sort_values(['PULocationID', 'pickup_datetime'])
     >>> hourly = add_lag_features(hourly, zone_col='PULocationID', target_col='demand')
-    >>> hourly[['PULocationID', 'hour', 'demand', 'demand_lag_1h']].head(10)
+    >>> hourly[['PULocationID', 'pickup_datetime', 'demand', 'demand_lag_1h']].head(10)
     """
-    # TODO: Add the three lag columns described in the docstring.
-    # Remember: always use groupby(zone_col) before calling .shift().
-    pass
+    grouped = df.groupby(zone_col)[target_col]
+    df["demand_lag_1h"] = grouped.shift(1)
+    df["demand_lag_24h"] = grouped.shift(24)
+    df["demand_lag_168h"] = grouped.shift(168)
+    return df
