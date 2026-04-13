@@ -74,7 +74,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     # TODO: Apply the three filters described in the docstring.
     # Example pattern: mask = (condition_1) & (condition_2) & (condition_3)
     # return df.loc[mask].reset_index(drop=True)
-    pass
+    return df
 
 
 # ---------------------------------------------------------------------------
