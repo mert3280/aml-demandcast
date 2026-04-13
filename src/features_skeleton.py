@@ -31,7 +31,15 @@ from typing import Optional
 # Changing a name here without updating those files will break prediction.
 
 FEATURE_COLS: list[str] = [
-    # Students: fill in feature column names you decide are important.
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "is_rush_hour",
+    "PULocationID",
+    "demand_lag_1h",
+    "demand_lag_24h",
+    "demand_lag_168h",
 ]
 
 
@@ -71,10 +79,16 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     >>> clean_df = clean_data(df)
     >>> print(f"Rows removed: {len(df) - len(clean_df)}")
     """
-    # TODO: Apply the three filters described in the docstring.
-    # Example pattern: mask = (condition_1) & (condition_2) & (condition_3)
-    # return df.loc[mask].reset_index(drop=True)
-    return df
+    # Thresholds from EDA (Section 4, 02_eda_skeleton.ipynb):
+    #   trip_distance: (0, 20] — removes sensor zeros and implausible long trips
+    #   fare_amount:   (0, 70] — removes erroneous/refunded fares and extreme outliers
+    #   passenger_count: [1, 7] — removes empty-cab records and overloaded trips
+    mask = (
+        (df["trip_distance"] > 0) & (df["trip_distance"] <= 20) &
+        (df["fare_amount"] > 0) & (df["fare_amount"] <= 70) &
+        (df["passenger_count"] >= 1) & (df["passenger_count"] <= 7)
+    )
+    return df.loc[mask].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +134,15 @@ def create_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     >>> df = create_temporal_features(df)
     >>> df[['hour', 'day_of_week', 'is_weekend', 'is_rush_hour']].head()
     """
-    # TODO: Add the five new columns described in the docstring.
-    pass
+    df['pickup_hour'] = df['tpep_pickup_datetime'].dt.floor('H')
+    df['hour'] = df['tpep_pickup_datetime'].dt.hour
+    df['day_of_week'] = df['tpep_pickup_datetime'].dt.dayofweek
+    df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
+    df['month'] = df['tpep_pickup_datetime'].dt.month
+    df['is_rush_hour'] = (
+        ((df['hour'].isin([7, 8, 17, 18])) & (df['day_of_week'] < 5)).astype(int)
+    )
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -164,9 +185,7 @@ def aggregate_to_hourly_demand(df: pd.DataFrame) -> pd.DataFrame:
     >>> print(hourly.shape)   # expect (n_zones * n_hours, 3)
     >>> hourly.head()
     """
-    # TODO: Group by PULocationID and pickup_hour, count rows, and rename
-    # the count column to 'demand'. Reset the index afterward.
-    pass
+    return df.groupby(['PULocationID', 'pickup_hour']).size().reset_index(name='demand').rename(columns={'pickup_hour': 'hour'})
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +244,8 @@ def add_lag_features(
     >>> hourly = add_lag_features(hourly, zone_col='PULocationID', target_col='demand')
     >>> hourly[['PULocationID', 'hour', 'demand', 'demand_lag_1h']].head(10)
     """
-    # TODO: Add the three lag columns described in the docstring.
-    # Remember: always use groupby(zone_col) before calling .shift().
-    pass
+    # Use groupby(zone_col) before .shift() to avoid bleeding demand across zones
+    df['demand_lag_1h'] = df.groupby(zone_col)[target_col].shift(1)
+    df['demand_lag_24h'] = df.groupby(zone_col)[target_col].shift(24)
+    df['demand_lag_168h'] = df.groupby(zone_col)[target_col].shift(168)
+    return df
