@@ -27,15 +27,54 @@
 
 ---
 
-## Cross-Validation Results (LGBMRegressor, 5-fold TimeSeriesSplit)
+## Cross-Validation Results (5-fold TimeSeriesSplit, training set only)
 
-> **Instructions:** Run `python src/cv.py` and copy the output here.
+### Per-fold detail
 
-| | Value |
-|-|-------|
-| Per-fold MAEs | [10.45, 18.54, 17.36, 10.22, 16.78] |
-| Mean MAE | 14.67 |
-| Std MAE | 3.58 |
+**LinearRegression**
+```
+  Fold 1/5: MAE = 9.70   (train=3,524 rows, val=3,521 rows)
+  Fold 2/5: MAE = 17.71  (train=7,045 rows, val=3,521 rows)
+  Fold 3/5: MAE = 15.53  (train=10,566 rows, val=3,521 rows)
+  Fold 4/5: MAE = 12.29  (train=14,087 rows, val=3,521 rows)
+  Fold 5/5: MAE = 20.27  (train=17,608 rows, val=3,521 rows)
+```
+
+**RandomForestRegressor**
+```
+  Fold 1/5: MAE = 10.38  (train=3,524 rows, val=3,521 rows)
+  Fold 2/5: MAE = 17.27  (train=7,045 rows, val=3,521 rows)
+  Fold 3/5: MAE = 16.49  (train=10,566 rows, val=3,521 rows)
+  Fold 4/5: MAE = 11.37  (train=14,087 rows, val=3,521 rows)
+  Fold 5/5: MAE = 16.87  (train=17,608 rows, val=3,521 rows)
+```
+
+**LGBMRegressor**
+```
+  Fold 1/5: MAE = 10.45  (train=3,524 rows, val=3,521 rows)
+  Fold 2/5: MAE = 18.54  (train=7,045 rows, val=3,521 rows)
+  Fold 3/5: MAE = 17.36  (train=10,566 rows, val=3,521 rows)
+  Fold 4/5: MAE = 10.22  (train=14,087 rows, val=3,521 rows)
+  Fold 5/5: MAE = 16.78  (train=17,608 rows, val=3,521 rows)
+```
+
+**XGBRegressor**
+```
+  Fold 1/5: MAE = 11.82  (train=3,524 rows, val=3,521 rows)
+  Fold 2/5: MAE = 18.54  (train=7,045 rows, val=3,521 rows)
+  Fold 3/5: MAE = 18.59  (train=10,566 rows, val=3,521 rows)
+  Fold 4/5: MAE = 12.31  (train=14,087 rows, val=3,521 rows)
+  Fold 5/5: MAE = 20.05  (train=17,608 rows, val=3,521 rows)
+```
+
+### Summary
+
+| Model | Mean MAE | Std MAE |
+|-------|----------|---------|
+| LinearRegression | 15.10 | 3.76 |
+| **RandomForestRegressor** | **14.48** | **2.97** |
+| LGBMRegressor | 14.67 | 3.58 |
+| XGBRegressor | 16.26 | 3.47 |
 
 ---
 
@@ -47,10 +86,11 @@ outperforming the Linear Regression baseline (11.89) by 33% — confirming that 
 captures non-linear demand patterns that a linear model cannot.
 
 **What the gap between training and validation metrics suggests:**
-All four models show strong validation R² scores (0.923–0.961), indicating the lag features
-carry most of the predictive signal; however, the two boosting models (LightGBM and XGBoost)
-converge tightly in validation performance, suggesting diminishing returns from model complexity
-and that the remaining error is likely driven by genuine demand volatility rather than underfitting.
+XGBoost posted the best single held-out validation MAE (7.97) but the worst CV mean MAE (16.26),
+while RandomForest was the most stable across CV folds (mean 14.48, std 2.97 — lowest of all
+models). This divergence suggests XGBoost may be benefiting from the specific demand pattern of
+validation week 4 rather than generalizing robustly; RandomForest's lower CV variance indicates
+more consistent performance across different time windows in the training period.
 
 **What I would try next given more time:**
 I would run Optuna hyperparameter tuning on XGBoost — specifically searching over

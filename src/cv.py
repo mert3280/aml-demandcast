@@ -115,11 +115,14 @@ def time_series_cv(
 
 
 # ---------------------------------------------------------------------------
-# Entry point — runs CV on the best model from train.py
+# Entry point — runs CV on all models from train.py
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    from lightgbm import LGBMRegressor  # best-performing model from Part 2
+    from sklearn.linear_model import LinearRegression
+    from sklearn.ensemble import RandomForestRegressor
+    from lightgbm import LGBMRegressor
+    from xgboost import XGBRegressor
 
     # Load features and restrict to training set only — val/test are sealed
     df    = pd.read_parquet(DATA_PATH)
@@ -128,20 +131,28 @@ if __name__ == "__main__":
     X_train = train[FEATURE_COLS]
     y_train = train[TARGET]
 
-    print(f"Running 5-fold TimeSeriesSplit CV on LGBMRegressor "
-          f"({len(X_train):,} training rows)...\n")
+    print(f"5-fold TimeSeriesSplit CV on all models ({len(X_train):,} training rows)\n")
+    print("=" * 60)
 
-    results = time_series_cv(
-        model=LGBMRegressor(n_estimators=100, random_state=42, verbose=-1),
-        X=X_train,
-        y=y_train,
-        n_splits=5,
-    )
+    models = [
+        ("LinearRegression",      LinearRegression()),
+        ("RandomForestRegressor", RandomForestRegressor(n_estimators=100, random_state=42)),
+        ("LGBMRegressor",         LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)),
+        ("XGBRegressor",          XGBRegressor(n_estimators=100, random_state=42, verbosity=0)),
+    ]
 
-    print(f"\nCV Results — LGBMRegressor")
-    print(f"  Per-fold MAEs : {[round(m, 2) for m in results['fold_maes']]}")
-    print(f"  Mean MAE      : {results['mean_mae']:.2f}")
-    print(f"  Std  MAE      : {results['std_mae']:.2f}")
-    print(f"\nInterpretation: a std of {results['std_mae']:.2f} means the model's "
-          f"error varies by roughly ±{results['std_mae']:.2f} trips/hour across "
-          f"different time windows in the training period.")
+    all_results = {}
+    for name, model in models:
+        print(f"\n{name}")
+        results = time_series_cv(model=model, X=X_train, y=y_train, n_splits=5)
+        all_results[name] = results
+        print(f"  Per-fold MAEs : {[round(m, 2) for m in results['fold_maes']]}")
+        print(f"  Mean MAE      : {results['mean_mae']:.2f}")
+        print(f"  Std  MAE      : {results['std_mae']:.2f}")
+
+    print("\n" + "=" * 60)
+    print("Summary")
+    print(f"  {'Model':<26} {'Mean MAE':>10} {'Std MAE':>10}")
+    print(f"  {'-'*26} {'-'*10} {'-'*10}")
+    for name, r in all_results.items():
+        print(f"  {name:<26} {r['mean_mae']:>10.2f} {r['std_mae']:>10.2f}")
