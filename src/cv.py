@@ -26,7 +26,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit
 
 from features import FEATURE_COLS  # features.py lives alongside this file in src/
@@ -91,7 +91,9 @@ def time_series_cv(
     >>> print(f"CV MAE: {results['mean_mae']:.2f} ± {results['std_mae']:.2f}")
     """
     tscv      = TimeSeriesSplit(n_splits=n_splits)
-    fold_maes = []
+    fold_maes  = []
+    fold_rmses = []
+    fold_r2s   = []
 
     for fold, (train_idx, val_idx) in enumerate(tscv.split(X), start=1):
         X_tr, X_va = X.iloc[train_idx], X.iloc[val_idx]
@@ -101,15 +103,25 @@ def time_series_cv(
         m.fit(X_tr, y_tr)
         preds = m.predict(X_va)
 
-        mae = mean_absolute_error(y_va, preds)
+        mae  = mean_absolute_error(y_va, preds)
+        rmse = root_mean_squared_error(y_va, preds)
+        r2   = r2_score(y_va, preds)
         fold_maes.append(mae)
-        print(f"  Fold {fold}/{n_splits}: MAE = {mae:.2f}  "
+        fold_rmses.append(rmse)
+        fold_r2s.append(r2)
+        print(f"  Fold {fold}/{n_splits}: MAE = {mae:.2f}  RMSE = {rmse:.2f}  R² = {r2:.3f}  "
               f"(train={len(X_tr):,} rows, val={len(X_va):,} rows)")
 
     results = {
-        "fold_maes": fold_maes,
-        "mean_mae":  float(np.mean(fold_maes)),
-        "std_mae":   float(np.std(fold_maes)),
+        "fold_maes":  fold_maes,
+        "fold_rmses": fold_rmses,
+        "fold_r2s":   fold_r2s,
+        "mean_mae":   float(np.mean(fold_maes)),
+        "std_mae":    float(np.std(fold_maes)),
+        "mean_rmse":  float(np.mean(fold_rmses)),
+        "std_rmse":   float(np.std(fold_rmses)),
+        "mean_r2":    float(np.mean(fold_r2s)),
+        "std_r2":     float(np.std(fold_r2s)),
     }
     return results
 
@@ -146,13 +158,17 @@ if __name__ == "__main__":
         print(f"\n{name}")
         results = time_series_cv(model=model, X=X_train, y=y_train, n_splits=5)
         all_results[name] = results
-        print(f"  Per-fold MAEs : {[round(m, 2) for m in results['fold_maes']]}")
-        print(f"  Mean MAE      : {results['mean_mae']:.2f}")
-        print(f"  Std  MAE      : {results['std_mae']:.2f}")
+        print(f"  Per-fold MAEs  : {[round(m, 2) for m in results['fold_maes']]}")
+        print(f"  Per-fold RMSEs : {[round(m, 2) for m in results['fold_rmses']]}")
+        print(f"  Per-fold R²s   : {[round(r, 3) for r in results['fold_r2s']]}")
+        print(f"  Mean MAE       : {results['mean_mae']:.2f}  (std {results['std_mae']:.2f})")
+        print(f"  Mean RMSE      : {results['mean_rmse']:.2f}  (std {results['std_rmse']:.2f})")
+        print(f"  Mean R²        : {results['mean_r2']:.3f}  (std {results['std_r2']:.3f})")
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("Summary")
-    print(f"  {'Model':<26} {'Mean MAE':>10} {'Std MAE':>10}")
-    print(f"  {'-'*26} {'-'*10} {'-'*10}")
+    print(f"  {'Model':<26} {'Mean MAE':>10} {'Std MAE':>9} {'Mean RMSE':>11} {'Std RMSE':>10} {'Mean R²':>9}")
+    print(f"  {'-'*26} {'-'*10} {'-'*9} {'-'*11} {'-'*10} {'-'*9}")
     for name, r in all_results.items():
-        print(f"  {name:<26} {r['mean_mae']:>10.2f} {r['std_mae']:>10.2f}")
+        print(f"  {name:<26} {r['mean_mae']:>10.2f} {r['std_mae']:>9.2f} "
+              f"{r['mean_rmse']:>11.2f} {r['std_rmse']:>10.2f} {r['mean_r2']:>9.3f}")
