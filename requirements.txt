@@ -5,5 +5,7 @@ mlflow
 streamlit
 pyarrow
 optuna
-seaborn 
+seaborn
 matplotlib
+lightgbm
+xgboost

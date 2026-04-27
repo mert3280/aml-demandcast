@@ -7,7 +7,7 @@ Every run is logged to MLflow — parameters, metrics, and the model artifact.
 
 Usage (from project root with .venv active)
 -------------------------------------------
-    python src/train.py
+    python train.py
 
 Before running
 --------------
@@ -15,30 +15,14 @@ Before running
        mlflow ui
    Then open http://localhost:5000 in your browser.
 2. features.parquet must exist in data/:
-       python build_features.py produces this file.
-
-Why temporal split — not random split
---------------------------------------
-Taxi demand is a time-series: each hour's demand is correlated with the hours
-that preceded it (via lag features and seasonal patterns). A random split would
-scatter future observations into the training set, allowing the model to "see"
-future data during training — this is data leakage. The model would appear to
-perform well on validation but fail in deployment, where it must predict
-strictly from past data. A temporal split guarantees the model is always trained
-on past data and evaluated on strictly future data, matching the deployment
-scenario exactly.
-
-    Training set:   Jan 7  – Jan 21  (~70% of data, Weeks 1–3 of January)
-    Validation set: Jan 22 – Jan 31  (~15%, Week 4 of January)
-    Test set:       Feb 1  onward    (~15%, sealed until final evaluation)
-
-The test set is off-limits until final evaluation. Do not use it here.
+       pipelines/build_features.py produces this file.
 
 Functions
 ---------
 evaluate          Compute MAE, RMSE, and R² for a set of predictions.
                   Already implemented — use it, don't rewrite it.
 train_and_log     Load data, split, train one model, log everything to MLflow.
+                  This is your TODO.
 """
 
 from pathlib import Path
@@ -47,11 +31,9 @@ import mlflow
 from mlflow import sklearn as mlflow_sklearn
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
-from lightgbm import LGBMRegressor
-from xgboost import XGBRegressor
 from typing import Any
 
 from features import FEATURE_COLS  # features.py lives alongside this file in src/
@@ -83,6 +65,9 @@ TARGET = "demand"
 def evaluate(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float]:
     """Compute MAE, RMSE, and R² for a set of predictions.
 
+    This function is pre-built for you. Call it on both the validation set
+    and, at the very end, the test set (once only).
+
     Parameters
     ----------
     y_true : pd.Series
@@ -109,7 +94,7 @@ def evaluate(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
-# train_and_log()
+# train_and_log() — your TODO
 # ---------------------------------------------------------------------------
 
 def train_and_log(
@@ -142,111 +127,100 @@ def train_and_log(
     Parameters
     ----------
     model : sklearn estimator
-        An unfitted sklearn-compatible regression model.
+        An unfitted sklearn-compatible regression model, e.g.:
+            LinearRegression()
+            RandomForestRegressor(n_estimators=100, random_state=42)
+            Third model of your choice
     run_name : str
         Human-readable label shown in the MLflow UI, e.g. "linear_regression_baseline".
-        Use snake_case.
+        Use snake_case. Be specific — "rf_100_estimators" beats "random_forest_v2".
     params : dict
         Dictionary of parameters to log. Must include at minimum:
             {"model": type(model).__name__, ...hyperparameters...}
+        Example:
+            {"model": "RandomForestRegressor", "n_estimators": 100, "max_depth": 10}
 
     Returns
     -------
     str
-        The MLflow run ID (a hex string).
+        The MLflow run ID (a hex string). Print it or save it — you can use it
+        to retrieve this exact run later with mlflow.get_run(run_id).
 
     Raises
     ------
     FileNotFoundError
         If data/features.parquet does not exist. Run build_features.py first.
+    mlflow.exceptions.MlflowException
+        If the MLflow server is not reachable at MLFLOW_TRACKING_URI.
+        Fix: start the server with `mlflow ui` from your project root.
+
+    Examples
+    --------
+    >>> from sklearn.linear_model import LinearRegression
+    >>> run_id = train_and_log(
+    ...     model=LinearRegression(),
+    ...     run_name="linear_regression_baseline",
+    ...     params={"model": "LinearRegression"},
+    ... )
+    >>> print(f"Run logged: {run_id}")
     """
+    
     # 1. Load data
     df = pd.read_parquet(DATA_PATH)
-
-    # 2. Temporal split — strictly chronological, no leakage
-    train = df[df["pickup_datetime"] < VAL_CUTOFF]
-    val   = df[(df["pickup_datetime"] >= VAL_CUTOFF) & (df["pickup_datetime"] < TEST_CUTOFF)]
-    # test is sealed — not touched here
-
-    # Verify split integrity: training max must be before validation min
-    assert train["pickup_datetime"].max() < pd.Timestamp(VAL_CUTOFF), \
-        "Split error: training set bleeds into validation window"
-    assert val["pickup_datetime"].min() >= pd.Timestamp(VAL_CUTOFF), \
-        "Split error: validation set starts before VAL_CUTOFF"
-
+    
+    # 2. Temporal split
+    train = df[df['pickup_datetime'] < VAL_CUTOFF]
+    val   = df[(df['pickup_datetime'] >= VAL_CUTOFF) & (df['pickup_datetime'] < TEST_CUTOFF)]
+    
     # 3. Separate features and target
     X_train, y_train = train[FEATURE_COLS], train[TARGET]
     X_val,   y_val   = val[FEATURE_COLS],   val[TARGET]
-
+    
     # 4–7. MLflow run
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
-
+    
     with mlflow.start_run(run_name=run_name) as run:
         mlflow.log_params(params)
-
+        
         model.fit(X_train, y_train)
-        val_preds   = model.predict(X_val)
+        val_preds = model.predict(X_val)
         val_metrics = evaluate(y_val, val_preds)
-
+        
         # Prefix keys with "val_" so the comparison view groups them together
         mlflow.log_metrics({f"val_{k}": v for k, v in val_metrics.items()})
         mlflow_sklearn.log_model(model, "model")
-
+        
         print(f"[{run_name}] val_mae={val_metrics['mae']:.2f}  "
-              f"val_rmse={val_metrics['rmse']:.2f}  val_r2={val_metrics['r2']:.3f}")
+            f"val_rmse={val_metrics['rmse']:.2f}  val_r2={val_metrics['r2']:.3f}")
         return run.info.run_id
 
 
 # ---------------------------------------------------------------------------
-# Entry point — trains four models and logs each run to MLflow
+# Entry point — trains three models and logs each run to MLflow
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Model 1: Linear Regression — always start with the simplest baseline
+    # Model 1: Linear Regression baseline
     train_and_log(
         model=LinearRegression(),
         run_name="linear_regression_baseline",
         params={"model": "LinearRegression"},
     )
 
-    # Model 2: Random Forest — strong ensemble baseline, good with tabular data
+    # Model 2: Random Forest
     train_and_log(
         model=RandomForestRegressor(n_estimators=100, random_state=42),
         run_name="random_forest_100_estimators",
-        params={
-            "model":        "RandomForestRegressor",
-            "n_estimators": 100,
-            "max_depth":    None,
-            "random_state": 42,
-        },
+        params={"model": "RandomForestRegressor", "n_estimators": 100,
+                "max_depth": None, "random_state": 42},
     )
 
-    # Model 3: LightGBM — chosen because our features include lag variables
-    # (demand_lag_1h, demand_lag_24h, demand_lag_168h) that are derived from
-    # the target itself, making them highly correlated. LightGBM's leaf-wise
-    # growth strategy and built-in L1/L2 regularization make it less prone
-    # to overfitting on correlated tabular features than standard boosting.
+    # Model 3: Gradient Boosting
     train_and_log(
-        model=LGBMRegressor(n_estimators=100, random_state=42, verbose=-1),
-        run_name="lightgbm_100_estimators",
-        params={
-            "model":        "LGBMRegressor",
-            "n_estimators": 100,
-            "random_state": 42,
-        },
-    )
-
-    # Model 4: XGBoost — included alongside LightGBM to compare bias-variance
-    # tradeoffs. XGBoost typically achieves high accuracy on smaller structured
-    # datasets but can overfit more easily than LightGBM when features are
-    # correlated. Training both allows a direct comparison on this task.
-    train_and_log(
-        model=XGBRegressor(n_estimators=100, random_state=42, verbosity=0),
-        run_name="xgboost_100_estimators",
-        params={
-            "model":        "XGBRegressor",
-            "n_estimators": 100,
-            "random_state": 42,
-        },
+        model=GradientBoostingRegressor(n_estimators=100, learning_rate=0.1,
+                                        max_depth=3, random_state=42),
+        run_name="gradient_boosting_lr0.1_depth3",
+        params={"model": "GradientBoostingRegressor", "n_estimators": 100,
+                "learning_rate": 0.1, "max_depth": 3, "random_state": 42},
     )
