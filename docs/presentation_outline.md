@@ -37,11 +37,11 @@ This is a preparation tool, not a slide deck. Each section lists the points to h
 ## 4. Demo
 
 - **Live walkthrough of `streamlit run app/dashboard.py`:**
-  1. Show the sidebar — pick a zone (e.g. JFK = 132), an hour (e.g. 5pm), and a day of week (e.g. Friday).
-  2. Watch the `st.metric` predicted demand update in real time as inputs change.
-  3. Toggle the rush-hour and weekend cases to show how prediction shifts (e.g. Friday 5pm vs Sunday 3am).
-  4. Scroll to the all-zones bar chart — point out the morning ramp at 7-9am and the evening peak at 5-7pm.
-  5. Compare a high-demand zone (Manhattan midtown) to a low-demand zone (outer borough) using the per-zone profile chart.
+  1. Show the sidebar — pick a zone (e.g. JFK = 132); that is the only control.
+  2. Point out the 7 forecast cards, each showing a daily total for tomorrow through the next 7 days.
+  3. Explain that the app rolls predictions forward hour by hour behind the scenes, then sums them into daily totals.
+  4. Use one zone change to show how the whole 7-day pattern updates immediately.
+  5. Emphasize that the app loads from the MLflow Model Registry, so promoting a new version in MLflow auto-updates the dashboard.
 - **What to emphasize:** The dashboard loads from the MLflow Model Registry, so promoting a new version in MLflow auto-updates the app — no code change required.
 
 ## 5. Reflection
