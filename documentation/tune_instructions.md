@@ -19,11 +19,11 @@ Register the best trial as "DemandCast" version 2 in the MLflow Model Registry a
 You will create a new branch and use it to develop your Streamlit dashboard. You are provided with dashboard_skeleton.py (see attached), which includes the model loading block pre-filled. Using the skeleton as your starting point, build a Streamlit dashboard that:
 
 Loads the Production model from the MLflow Model Registry at startup
-Accepts user inputs via a sidebar: pickup zone, hour of day, day of week, and weekend toggle
-Displays the predicted demand prominently using st.metric()
-Includes the plain-language metric interpretation you wrote in Part 1
-Shows at least one visualization — a bar chart of average hourly demand by hour of day is a good starting point
-The feature vector passed to model.predict() must match your training data exactly — same column names, same order. Copy your FEATURE_COLS list from train.py directly into the dashboard to avoid column mismatch errors.
+Accepts user inputs via a sidebar: pickup zone only
+Displays a weather-style 7-day forecast of daily pickup totals using st.metric()
+Shows one prediction card per day starting tomorrow in NYC local time
+Uses recursive hourly predictions under the hood, then sums them into daily totals for display
+Keeps the feature vector passed to model.predict() aligned with your training data exactly — same column names, same order. Import FEATURE_COLS from src.features (or keep an equivalent shared contract) so the dashboard and training code stay in sync.
 
 To run your dashboard locally: streamlit run app/dashboard.py
 

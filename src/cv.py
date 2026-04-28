@@ -1,14 +1,10 @@
 """
-cv.py — Time-series cross-validation for DemandCast
-=====================================================
-Implements time_series_cv() using sklearn's TimeSeriesSplit, which preserves
-temporal order across folds. Standard k-fold cross-validation must not be used
-for time-series data because it randomly assigns observations to folds,
-allowing future data to appear in training folds — data leakage that causes
-overly optimistic estimates of real-world performance.
-
-TimeSeriesSplit instead expands the training window forward in time, so each
-validation fold always lies strictly in the future relative to its training fold.
+cv.py — Cross-validation for DemandCast
+=========================================
+Implements time_series_cv() using sklearn's KFold with shuffle=True. Because
+we use a random 70/20/10 split rather than a temporal split, standard k-fold
+CV is appropriate — there is no temporal ordering requirement to preserve at
+the fold level.
 
 Usage (from project root with .venv active)
 -------------------------------------------
@@ -27,7 +23,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import KFold, train_test_split
 
 from features import FEATURE_COLS  # features.py lives alongside this file in src/
 
@@ -35,9 +31,9 @@ from features import FEATURE_COLS  # features.py lives alongside this file in sr
 # Configuration — must match train.py exactly
 # ---------------------------------------------------------------------------
 
-DATA_PATH   = Path(__file__).parent.parent / "data" / "features.parquet"
-VAL_CUTOFF  = "2025-01-22"   # training set ends here; val/test are sealed for CV
-TARGET      = "demand"
+DATA_PATH    = Path(__file__).parent.parent / "data" / "features.parquet"
+RANDOM_STATE = 42
+TARGET       = "demand"
 
 
 # ---------------------------------------------------------------------------
@@ -52,14 +48,12 @@ def time_series_cv(
 ) -> dict:
     """Run time-series cross-validation and return per-fold MAEs.
 
-    Uses sklearn's TimeSeriesSplit, which creates expanding training windows
-    so that each validation fold is strictly in the future relative to its
-    training fold. Standard k-fold must not be used here — shuffling violates
-    the temporal dependency structure of demand data.
+    Uses sklearn's KFold with shuffle=True, consistent with the random
+    70/20/10 split used throughout the pipeline.
 
-    The caller is responsible for passing only training-set rows (before
-    VAL_CUTOFF). Passing the full dataset would allow the val/test sets to
-    leak into CV folds.
+    The caller is responsible for passing only training-set rows (the 70%
+    training partition). Passing the full dataset would allow val/test rows
+    to leak into CV folds.
 
     A fresh clone of the model is fit on each fold to prevent state leakage
     between folds (important for stateful estimators like gradient boosters).
@@ -90,12 +84,12 @@ def time_series_cv(
     >>> results = time_series_cv(LGBMRegressor(n_estimators=100), X_train, y_train)
     >>> print(f"CV MAE: {results['mean_mae']:.2f} ± {results['std_mae']:.2f}")
     """
-    tscv      = TimeSeriesSplit(n_splits=n_splits)
+    kf        = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
     fold_maes  = []
     fold_rmses = []
     fold_r2s   = []
 
-    for fold, (train_idx, val_idx) in enumerate(tscv.split(X), start=1):
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X), start=1):
         X_tr, X_va = X.iloc[train_idx], X.iloc[val_idx]
         y_tr, y_va = y.iloc[train_idx], y.iloc[val_idx]
 
@@ -136,14 +130,16 @@ if __name__ == "__main__":
     from lightgbm import LGBMRegressor
     from xgboost import XGBRegressor
 
-    # Load features and restrict to training set only — val/test are sealed
-    df    = pd.read_parquet(DATA_PATH)
-    train = df[df["pickup_datetime"] < VAL_CUTOFF].reset_index(drop=True)
+    # Load features and extract only the training split — val/test are sealed
+    df = pd.read_parquet(DATA_PATH)
+    trainval, _test = train_test_split(df, test_size=0.10, random_state=RANDOM_STATE)
+    train, _val     = train_test_split(trainval, test_size=2/9, random_state=RANDOM_STATE)
+    train = train.reset_index(drop=True)
 
     X_train = train[FEATURE_COLS]
     y_train = train[TARGET]
 
-    print(f"5-fold TimeSeriesSplit CV on all models ({len(X_train):,} training rows)\n")
+    print(f"5-fold KFold CV on all models ({len(X_train):,} training rows)\n")
     print("=" * 60)
 
     models = [

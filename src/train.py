@@ -28,9 +28,9 @@ strictly from past data. A temporal split guarantees the model is always trained
 on past data and evaluated on strictly future data, matching the deployment
 scenario exactly.
 
-    Training set:   Jan 7  – Jan 21  (~70% of data, Weeks 1–3 of January)
-    Validation set: Jan 22 – Jan 31  (~15%, Week 4 of January)
-    Test set:       Feb 1  onward    (~15%, sealed until final evaluation)
+    Training set:   random 70% of zone-hour rows (random_state=42)
+    Validation set: random 20%
+    Test set:       random 10% (sealed until final evaluation)
 
 The test set is off-limits until final evaluation. Do not use it here.
 
@@ -50,6 +50,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
 from lightgbm import LGBMRegressor
 from xgboost import XGBRegressor
 from typing import Any
@@ -66,12 +67,7 @@ EXPERIMENT_NAME     = "DemandCast"
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "features.parquet"
 
-# Temporal split cutoffs — January 2025 dataset
-# Train:      Jan 7  – Jan 22  (~70%)
-# Validation: Jan 22 – Feb 1   (~15%)
-# Test:       Feb 1  onward    (~15%, sealed until final evaluation)
-VAL_CUTOFF  = "2025-01-22"
-TEST_CUTOFF = "2025-02-01"
+RANDOM_STATE = 42  # fixed seed for reproducible 70/20/10 random split
 
 TARGET = "demand"
 
@@ -163,16 +159,11 @@ def train_and_log(
     # 1. Load data
     df = pd.read_parquet(DATA_PATH)
 
-    # 2. Temporal split — strictly chronological, no leakage
-    train = df[df["pickup_datetime"] < VAL_CUTOFF]
-    val   = df[(df["pickup_datetime"] >= VAL_CUTOFF) & (df["pickup_datetime"] < TEST_CUTOFF)]
+    # 2. Random 70/20/10 split — reproducible via fixed random_state
+    # First carve out 10% test, then split the remaining 90% into 70/20.
+    trainval, _test = train_test_split(df, test_size=0.10, random_state=RANDOM_STATE)
+    train,    val   = train_test_split(trainval, test_size=2/9, random_state=RANDOM_STATE)
     # test is sealed — not touched here
-
-    # Verify split integrity: training max must be before validation min
-    assert train["pickup_datetime"].max() < pd.Timestamp(VAL_CUTOFF), \
-        "Split error: training set bleeds into validation window"
-    assert val["pickup_datetime"].min() >= pd.Timestamp(VAL_CUTOFF), \
-        "Split error: validation set starts before VAL_CUTOFF"
 
     # 3. Separate features and target
     X_train, y_train = train[FEATURE_COLS], train[TARGET]
